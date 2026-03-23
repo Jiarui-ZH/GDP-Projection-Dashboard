@@ -70,6 +70,12 @@ The dashboard will open in your browser at `http://localhost:8501`.
 
 ---
 
+## Live Demo
+
+The dashboard is publicly hosted at:
+
+**[https://gdp-projection-dashboard.streamlit.app/](https://gdp-projection-dashboard.streamlit.app/)**
+
 ## Deploying & Sharing
 
 The easiest way to share the dashboard publicly is via **Streamlit Community Cloud** (free):
