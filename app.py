@@ -20,10 +20,134 @@ from utils.model import (
 # ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CCM GDP Projection Dashboard",
-    page_icon="📊",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap');
+
+    /* Base */
+    html, body, [class*="css"] {
+        font-family: 'Open Sans', Arial, sans-serif !important;
+        border-radius: 0px !important;
+    }
+    *, *::before, *::after {
+        border-radius: 0px !important;
+    }
+
+    /* Header bar */
+    header[data-testid="stHeader"] {
+        background-color: #ffffff;
+        border-bottom: 2px solid #0073CF;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #f7f9fc;
+        border-right: 1px solid #dce3ea;
+    }
+    section[data-testid="stSidebar"] h2 {
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #4a6785;
+        margin-top: 1rem;
+        margin-bottom: 0.25rem;
+    }
+
+    /* Main content */
+    .main .block-container {
+        padding-top: 2rem;
+        max-width: 1200px;
+    }
+
+    /* Tabs */
+    button[data-baseweb="tab"] {
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #4a6785 !important;
+        border-bottom: 2px solid transparent;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: #0073CF !important;
+        border-bottom: 2px solid #0073CF;
+    }
+
+    /* Subheaders */
+    h2, h3 {
+        color: #1a3a5c !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.01em;
+    }
+    h4, h5 {
+        color: #2c5282 !important;
+        font-weight: 600 !important;
+    }
+
+    /* Metric / info boxes */
+    [data-testid="metric-container"] {
+        background-color: #f0f4f9;
+        border-left: 3px solid #0073CF;
+        padding: 0.75rem 1rem;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        background-color: #0073CF;
+        color: white;
+        font-weight: 600;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border: none;
+        padding: 0.5rem 1.25rem;
+    }
+    .stButton > button:hover {
+        background-color: #005fa3;
+    }
+
+    /* Dataframe / table */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #dce3ea;
+    }
+
+    /* Dividers */
+    hr {
+        border-color: #dce3ea;
+        margin: 1rem 0;
+    }
+
+    /* Expanders */
+    details summary {
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #4a6785;
+    }
+
+    /* Caption text */
+    [data-testid="stCaptionContainer"] p {
+        color: #6b7c93;
+        font-size: 0.78rem;
+    }
+
+    /* Input labels */
+    label[data-testid="stWidgetLabel"] p {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #2c5282;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 COLORS = px.colors.qualitative.Plotly
 HIST_COLOR = "rgba(100,100,100,0.3)"
@@ -56,9 +180,9 @@ def label(code: str) -> str:
 
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## ⚙️ Model Controls")
+    st.markdown("## Model Controls")
 
-    with st.expander("📐 Convergence Parameters", expanded=True):
+    with st.expander("Convergence Parameters", expanded=True):
         beta = st.slider(
             "β — Convergence Speed (annual)",
             0.001, 0.10, float(defaults["beta"]), 0.001,
@@ -73,7 +197,7 @@ with st.sidebar:
             help="Annual growth rate of the US productivity frontier.",
         ) / 100
 
-    with st.expander("🔬 Kernel Estimation", expanded=False):
+    with st.expander("Kernel Estimation", expanded=False):
         bandwidth = st.slider(
             "Kernel Bandwidth",
             1.0, 25.0, float(defaults["bandwidth"]), 0.25,
@@ -84,7 +208,7 @@ with st.sidebar:
             "Higher bandwidth → smoother LSS curve, less differentiation between countries."
         )
 
-    with st.expander("⚖️ GCI Weights", expanded=False):
+    with st.expander("GCI Weights", expanded=False):
         st.caption(
             "World Economic Forum weights for the three GCI pillars. "
             "These determine which economy-type model governs each country's steady state."
@@ -108,7 +232,7 @@ with st.sidebar:
         st.info(f"Closest preset: **{closest.split('(')[0].strip()}**")
 
     st.divider()
-    st.markdown("## 🌐 Country / Region")
+    st.markdown("## Country / Region")
 
     default_primary = "CHN" if "CHN" in all_codes else all_codes[0]
     primary = st.selectbox(
@@ -126,8 +250,8 @@ with st.sidebar:
     selected = [primary] + compare_with
 
     st.divider()
-    st.markdown("## 📅 Projection")
-    proj_end = st.slider("End Year", 2030, 2100, 2050, 1)
+    st.markdown("## Projection")
+    proj_end = st.slider("End Year", 2030, 2050, 2050, 1)
     show_original = st.checkbox("Overlay original Excel projection", value=True)
 
 # ─── Re-estimate LSS with current bandwidth ───────────────────────────────────
@@ -251,12 +375,12 @@ def line_chart(title: str, metric: str, unit_label: str, fmt_fn, divisor: float 
 
 # ─── TABS ─────────────────────────────────────────────────────────────────────
 tab_gdp, tab_gdppc, tab_region, tab_conv, tab_ppt, tab_tech = st.tabs([
-    "📈 GDP (Total)",
-    "💰 GDP per Capita",
-    "🌍 Regional View",
-    "🔄 Convergence",
-    "📋 Presentation Charts",
-    "🔬 Technical",
+    "GDP (Total)",
+    "GDP per Capita",
+    "Regional View",
+    "Convergence",
+    "Presentation Charts",
+    "Technical",
 ])
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -884,46 +1008,41 @@ with tab_tech:
         st.dataframe(disp.set_index("Code").sort_values("GCI Score", ascending=False), use_container_width=True)
 
     with tech3:
-        st.markdown("""
-##### Model Equations
+        st.markdown("##### Model Equations")
 
-**1. Labour Productivity**
-$$\\text{Productivity}_t = \\frac{\\text{GDP}_t}{\\text{WAP}_t}$$
+        st.markdown("**1. Labour Productivity**")
+        st.latex(r"\text{Productivity}_t = \frac{\text{GDP}_t}{\text{WAP}_t}")
 
-**2. Relative Productivity (vs USA)**
-$$y_t = \\frac{\\text{Productivity}_{\\text{country},t}}{\\text{Productivity}_{\\text{USA},t}}$$
+        st.markdown("**2. Relative Productivity (vs USA)**")
+        st.latex(r"y_t = \frac{\text{Productivity}_{\text{country},t}}{\text{Productivity}_{\text{USA},t}}")
 
-**3. Long-Run Steady State (Kernel Regression)**
-$$\\ln(y^*) = \\frac{\\sum_i K\\!\\left(\\frac{\\text{GCI} - \\text{GCI}_i}{h}\\right) \\ln(y_i)}{\\sum_i K\\!\\left(\\frac{\\text{GCI} - \\text{GCI}_i}{h}\\right)}$$
+        st.markdown("**3. Long-Run Steady State (Kernel Regression)**")
+        st.latex(r"\ln(y^*) = \frac{\sum_i K\!\left(\frac{\text{GCI} - \text{GCI}_i}{h}\right) \ln(y_i)}{\sum_i K\!\left(\frac{\text{GCI} - \text{GCI}_i}{h}\right)}")
+        st.caption("where K(u) = exp(-u²/2) is the Gaussian kernel and h is the bandwidth.")
 
-where $K(u) = e^{-u^2/2}$ (Gaussian kernel) and $h$ is the bandwidth.
+        st.markdown("**4. Conditional Convergence (projection)**")
+        st.latex(r"\ln(y_{t+1}) = \ln(y_t) + \beta \cdot [\ln(y^*) - \ln(y_t)]")
 
-**4. Conditional Convergence (projection)**
-$$\\ln(y_{t+1}) = \\ln(y_t) + \\beta \\cdot [\\ln(y^*) - \\ln(y_t)]$$
+        st.markdown("**5. GDP per Capita Projection**")
+        st.latex(r"\text{GDPPC}_t = \text{GDPPC}_{2024} \cdot \frac{y_t}{y_{2024}} \cdot e^{g_{\text{USA}} \cdot (t - 2024)} \cdot \frac{\text{WAP}_t / \text{Pop}_t}{\text{WAP}_{2024} / \text{Pop}_{2024}}")
 
-**5. GDP per Capita Projection**
-$$\\text{GDPPC}_t = \\text{GDPPC}_{2024}
-    \\cdot \\frac{y_t}{y_{2024}}
-    \\cdot e^{g_{\\text{USA}} \\cdot (t - 2024)}
-    \\cdot \\frac{\\text{WAP}_t / \\text{Pop}_t}{\\text{WAP}_{2024} / \\text{Pop}_{2024}}$$
+        st.markdown("**6. Total GDP**")
+        st.latex(r"\text{GDP}_t = \text{GDPPC}_t \times \text{Population}_t / 10^6 \quad \text{(billions USD PPP)}")
 
-**6. Total GDP**
-$$\\text{GDP}_t = \\text{GDPPC}_t \\times \\text{Population}_t / 10^6 \\quad \\text{(billions USD PPP)}$$
-
-**Parameters:**
-| Symbol | Description | Default | Current |
-|--------|-------------|---------|---------|
-| $\\beta$ | Annual convergence speed | 0.025 | """ + f"{beta:.3f}" + """ |
-| $g_{{\\text{{USA}}}}$ | US productivity growth | 1.8%/yr | """ + f"{g_usa*100:.1f}%/yr" + """ |
-| $h$ | Kernel bandwidth | 7.76 | """ + f"{bandwidth:.2f}" + """ |
-""")
+        st.markdown("**Parameters**")
+        st.dataframe(pd.DataFrame({
+            "Symbol":      ["β", "g_USA", "h"],
+            "Description": ["Annual convergence speed", "US productivity growth", "Kernel bandwidth"],
+            "Default":     ["0.025", "1.8%/yr", "7.76"],
+            "Current":     [f"{beta:.3f}", f"{g_usa*100:.1f}%/yr", f"{bandwidth:.2f}"],
+        }), use_container_width=True, hide_index=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
 # DOWNLOAD SECTION
 # ════════════════════════════════════════════════════════════════════════════════
 st.divider()
-st.subheader("⬇️ Export Forecast Data to Excel")
+st.subheader("Export Forecast Data to Excel")
 
 with st.expander("Configure and download", expanded=True):
     dl_col1, dl_col2, dl_col3 = st.columns(3)
