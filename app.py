@@ -178,15 +178,34 @@ all_codes = sorted(
 def label(code: str) -> str:
     return f"{name_map.get(code, code)} ({code})"
 
+# ─── Session state defaults ───────────────────────────────────────────────────
+if "beta_key" not in st.session_state:
+    st.session_state["beta_key"] = float(defaults["beta"])
+if "g_usa_key" not in st.session_state:
+    st.session_state["g_usa_key"] = float(defaults["g_usa"]) * 100
+
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## Model Controls")
+
+    st.markdown("## Scenario Presets")
+    _sc1, _sc2, _sc3 = st.columns(3)
+    if _sc1.button("Baseline", use_container_width=True):
+        st.session_state["beta_key"] = float(defaults["beta"])
+        st.session_state["g_usa_key"] = float(defaults["g_usa"]) * 100
+    if _sc2.button("High Growth", use_container_width=True):
+        st.session_state["beta_key"] = 0.04
+        st.session_state["g_usa_key"] = 2.5
+    if _sc3.button("Stagnation", use_container_width=True):
+        st.session_state["beta_key"] = 0.01
+        st.session_state["g_usa_key"] = 1.0
 
     with st.expander("Convergence Parameters", expanded=True):
         beta = st.slider(
             "β — Convergence Speed (annual)",
             0.001, 0.10, float(defaults["beta"]), 0.001,
             format="%.3f",
+            key="beta_key",
             help="Rate at which each country's productivity gap closes each year. "
                  "Original model: 0.025 (2.5 % per year).",
         )
@@ -194,8 +213,11 @@ with st.sidebar:
             "g_USA — US Productivity Growth (%/yr)",
             0.0, 5.0, float(defaults["g_usa"]) * 100, 0.1,
             format="%.1f%%",
+            key="g_usa_key",
             help="Annual growth rate of the US productivity frontier.",
         ) / 100
+        show_bands = st.checkbox("Show uncertainty bands", value=False,
+            help="Shaded range between β×0.6 and β×1.4 projections.")
 
     with st.expander("Kernel Estimation", expanded=False):
         bandwidth = st.slider(
@@ -281,6 +303,12 @@ def run_projections(codes: list, beta_: float, g_usa_: float, bw: float, end: in
 
 projections = run_projections(tuple(selected), beta, g_usa, bandwidth, proj_end)
 
+# ─── Uncertainty band projections (β ±40%) ────────────────────────────────────
+beta_lo = max(0.001, beta * 0.6)
+beta_hi = min(0.10,  beta * 1.4)
+proj_lo = run_projections(tuple(selected), beta_lo, g_usa, bandwidth, proj_end)
+proj_hi = run_projections(tuple(selected), beta_hi, g_usa, bandwidth, proj_end)
+
 # ─── Helper: build combined historical + projection series ────────────────────
 def build_series(code: str, metric: str) -> tuple[pd.Series, pd.Series, pd.Series | None]:
     """Return (historical, projection_custom, projection_original)."""
@@ -310,8 +338,10 @@ def fmt_gdppc(v: float) -> str:
 
 
 # ─── Build chart helpers ──────────────────────────────────────────────────────
-def line_chart(title: str, metric: str, unit_label: str, fmt_fn, divisor: float = 1.0) -> go.Figure:
+def line_chart(title: str, metric: str, unit_label: str, fmt_fn, divisor: float = 1.0,
+               annotate_crossovers: bool = False) -> go.Figure:
     fig = go.Figure()
+    proj_col = "gdppc" if metric == "gdppc" else "gdp_bn"
 
     for i, code in enumerate(selected):
         color = COLORS[i % len(COLORS)]
@@ -329,6 +359,24 @@ def line_chart(title: str, metric: str, unit_label: str, fmt_fn, divisor: float 
                 hovertemplate=f"<b>{cname}</b><br>%{{x}}: %{{customdata}}<extra></extra>",
                 customdata=[fmt_fn(v) for v in yvals],
             ))
+
+        # Uncertainty band
+        if show_bands and code in proj_lo and code in proj_hi:
+            _lo = proj_lo[code][proj_col]
+            _hi = proj_hi[code][proj_col]
+            common_idx = _lo.index.intersection(_hi.index)
+            if len(common_idx) > 0:
+                import plotly.colors as pc
+                rgb = pc.hex_to_rgb(color) if color.startswith("#") else (100, 100, 200)
+                band_color = f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.12)"
+                fig.add_trace(go.Scatter(
+                    x=list(common_idx) + list(common_idx[::-1]),
+                    y=list(_hi[common_idx].values / divisor) + list(_lo[common_idx].values / divisor),
+                    fill="toself", fillcolor=band_color,
+                    line=dict(width=0), showlegend=False, legendgroup=code,
+                    hoverinfo="skip",
+                ))
+
         if not proj.empty:
             yvals = proj.values / divisor
             fig.add_trace(go.Scatter(
@@ -355,6 +403,34 @@ def line_chart(title: str, metric: str, unit_label: str, fmt_fn, divisor: float 
                 customdata=[fmt_fn(v) for v in yvals],
             ))
 
+    # Crossover annotations
+    if annotate_crossovers and len(selected) >= 2:
+        for i in range(len(selected)):
+            for j in range(i + 1, len(selected)):
+                ca, cb = selected[i], selected[j]
+                if ca not in projections or cb not in projections:
+                    continue
+                sa = projections[ca][proj_col]
+                sb = projections[cb][proj_col]
+                common = sa.index.intersection(sb.index)
+                if len(common) < 2:
+                    continue
+                diff = sa[common] - sb[common]
+                for k in range(1, len(diff)):
+                    if diff.iloc[k - 1] * diff.iloc[k] < 0:
+                        cx_yr = int(diff.index[k])
+                        ca_name = name_map.get(ca, ca)
+                        cb_name = name_map.get(cb, cb)
+                        label_txt = f"{ca_name} / {cb_name} cross"
+                        fig.add_vline(
+                            x=cx_yr, line_dash="dot", line_color="#888", line_width=1,
+                            annotation_text=label_txt,
+                            annotation_position="top",
+                            annotation_font_size=10,
+                            annotation_font_color="#555",
+                        )
+                        break
+
     # Shaded historical region
     fig.add_vrect(x0=1980, x1=HIST_END, fillcolor="gray", opacity=0.06, line_width=0)
     fig.add_vline(x=HIST_END, line_dash="dot", line_color="gray", line_width=1)
@@ -372,6 +448,56 @@ def line_chart(title: str, metric: str, unit_label: str, fmt_fn, divisor: float 
     )
     return fig
 
+
+# ─── Summary panel ────────────────────────────────────────────────────────────
+_prim = primary
+_prim_name = name_map.get(_prim, _prim)
+_sm_cols = st.columns(4)
+
+with _sm_cols[0]:
+    if _prim in projections and proj_end in projections[_prim].index:
+        _gdp_val = float(projections[_prim].loc[proj_end, "gdp_bn"]) / 1000
+        st.metric(f"{_prim_name} GDP ({proj_end})", f"${_gdp_val:.1f}T")
+    else:
+        st.metric(f"{_prim_name} GDP ({proj_end})", "—")
+
+with _sm_cols[1]:
+    if _prim in projections and proj_end in projections[_prim].index:
+        _gdppc_val = float(projections[_prim].loc[proj_end, "gdppc"])
+        st.metric(f"{_prim_name} GDP/capita ({proj_end})", f"${_gdppc_val:,.0f}")
+    else:
+        st.metric(f"{_prim_name} GDP/capita ({proj_end})", "—")
+
+with _sm_cols[2]:
+    _ranked = sorted(
+        [(c, float(projections[c].loc[proj_end, "gdp_bn"])) for c in selected
+         if c in projections and proj_end in projections[c].index],
+        key=lambda x: -x[1]
+    )
+    if _ranked:
+        _top_code, _top_val = _ranked[0]
+        st.metric(f"Largest Economy ({proj_end})", name_map.get(_top_code, _top_code), f"${_top_val/1000:.1f}T")
+    else:
+        st.metric(f"Largest Economy ({proj_end})", "—")
+
+with _sm_cols[3]:
+    _crossover_yr = None
+    if _prim != "USA" and _prim in projections and "USA" in projections:
+        for _yr in range(HIST_END + 1, proj_end + 1):
+            if _yr in projections[_prim].index and _yr in projections["USA"].index:
+                _v_prim = float(projections[_prim].loc[_yr, "gdp_bn"])
+                _v_usa  = float(projections["USA"].loc[_yr, "gdp_bn"])
+                if _v_prim >= _v_usa:
+                    _crossover_yr = _yr
+                    break
+    if _crossover_yr:
+        st.metric(f"{_prim_name} overtakes USA", str(_crossover_yr))
+    elif _prim == "USA":
+        st.metric("USA", "Frontier economy")
+    else:
+        st.metric(f"{_prim_name} vs USA", "No overtake by 2050")
+
+st.divider()
 
 # ─── TABS ─────────────────────────────────────────────────────────────────────
 tab_gdp, tab_gdppc, tab_region, tab_conv, tab_ppt, tab_tech = st.tabs([
@@ -396,9 +522,10 @@ with tab_gdp:
     fig = line_chart(
         "GDP (Trillions, 2021 USD PPP)", "gdp",
         "Trillions (2021 USD PPP)", fmt_gdp_trn,
-        divisor=1000,
+        divisor=1000, annotate_crossovers=True,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True,
+        config={"toImageButtonOptions": {"format": "png", "filename": "gdp_total", "scale": 2}})
 
     # Summary table
     st.markdown("#### 2024 → Projection Snapshot")
@@ -418,6 +545,27 @@ with tab_gdp:
     if rows:
         st.dataframe(pd.DataFrame(rows).set_index("Code"), use_container_width=True)
 
+    # 2050 GDP ranking
+    _rank_rows = []
+    for code in selected:
+        if code not in projections:
+            continue
+        _p = projections[code]
+        if proj_end in _p.index:
+            _rank_rows.append({
+                "Country": name_map.get(code, code),
+                "Code": code,
+                f"GDP {proj_end} (T)": round(float(_p.loc[proj_end, "gdp_bn"]) / 1000, 2),
+                f"GDP/capita {proj_end}": int(float(_p.loc[proj_end, "gdppc"])),
+            })
+    if _rank_rows:
+        st.markdown(f"#### {proj_end} Rankings — Selected Countries")
+        _rank_df = pd.DataFrame(_rank_rows).sort_values(f"GDP {proj_end} (T)", ascending=False).reset_index(drop=True)
+        _rank_df.index += 1
+        _rank_df[f"GDP/capita {proj_end}"] = _rank_df[f"GDP/capita {proj_end}"].apply(lambda x: f"${x:,}")
+        _rank_df[f"GDP {proj_end} (T)"] = _rank_df[f"GDP {proj_end} (T)"].apply(lambda x: f"${x:.2f}T")
+        st.dataframe(_rank_df.set_index("Code"), use_container_width=True)
+
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 2 — GDP per Capita
@@ -430,7 +578,8 @@ with tab_gdppc:
     )
 
     fig2 = line_chart("GDP per Capita (2021 USD PPP)", "gdppc", "USD", fmt_gdppc)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True,
+        config={"toImageButtonOptions": {"format": "png", "filename": "gdp_per_capita", "scale": 2}})
 
     # GDPPC relative to USA
     st.markdown("#### GDP per Capita as % of USA")
